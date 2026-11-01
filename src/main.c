@@ -92,28 +92,63 @@ long int read_serial_until(char* buffer, long int buffer_size, char delim, char 
 }
 
 int main(void) {
+    // Turn off the onboard LED
     DDRB |= 0<<PB5;
 
     serial_init();
+    write_serial("Welcome to hell!\n\r", 0);
 
-    write_serial("Welcome to hell!\n", 0);
+    // Synchronous TWI implementation (no interrupts)
+    // unsigned char slave_addresss = 0x27;
 
-    char input[200];
-    while (1) {
-        write_serial("\n\r> ", 0);
+    // Set up clock generator and prescaler
+    // To get around 5k hertz 100 TWBR and 16 prescaling is used
+    TWBR = 100;
+    TWSR |= (1<<TWPS0);
 
-        read_serial_until(input, sizeof(input), '\r', 0);
+    // Enable TWI, queue up and send start condition (send is done by writing 1 to TWINT)
+    TWCR = (1<<TWEN) | (1<<TWSTA) | (1<<TWINT);
+    // Wait for the start condition to be transmitted
+    while (!(TWCR & (1<<TWINT)));
+    // Check if start was sent successfully
+    if ((TWSR & 0xF8) != 0x08) {
+        write_serial("TWI: Failed to send START signal!\n\r", 0);
+        goto eternal_suffering;
+    }
+    write_serial("TWI: Start signal sent successfully!\n\r", 0);
 
-        // char formatted[400];
-        // sprintf(formatted, "You've entered %i characters: %s\n\r", strlen(input), input);
-        // write_serial(formatted, 0);
 
-        if (strcmp(input, "Meow!") == 0) {
-            write_serial("Woof", 0);
-        }
+    unsigned char slave_addresss = 1;
+mewo:
+    slave_addresss++;
+
+    // Prepare SLA+W (in the TWDR)
+    TWDR = (slave_addresss<<1) | 0;
+
+    // Address the slave
+    TWCR |= (1<<TWINT);
+    while (!(TWCR & (1<<TWINT)));
+
+    // Check whether slave ACK-d addressing
+    if ((TWSR & 0xF8) != 0x18) {
+        write_serial("TWI: Slave didn't ACK (ACK-N) addressing!\n\r", 0);
+
+        if (slave_addresss >= 127) goto eternal_suffering;
+        else goto mewo;
+        // goto eternal_suffering;
     }
 
+    write_serial("TWI: Slave ACK-d addressing!\n\r", 0);
+    char mewo[100];
+    sprintf(mewo, "Address of slave is: %i", slave_addresss);
+    write_serial(mewo, 0);
+
+
+
+
+
     // Make sure we never return
+eternal_suffering:
     for (;;) {}
     return 0;
 }

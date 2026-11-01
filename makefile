@@ -4,7 +4,7 @@ SRC_FILES = src/*.c
 # PORT = /dev/ttyACM0
 
 # For non genuine arduinos
-PORT = /dev/ttyUSB1
+PORT = /dev/ttyUSB0
 BAUDRATE = 250000
 
 MCU = atmega328p
