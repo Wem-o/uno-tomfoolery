@@ -99,10 +99,10 @@ int main(void) {
     write_serial("Welcome to hell!\n\r", 0);
 
     // Synchronous TWI implementation (no interrupts)
-    // unsigned char slave_addresss = 0x27;
+    unsigned char slave_addresss = 0x27;
 
-    // Set up clock generator and prescaler
-    // To get around 5k hertz 100 TWBR and 16 prescaling is used
+    // // Set up clock generator and prescaler
+    // // To get around 5k hertz 100 TWBR and 16 prescaling is used
     TWBR = 100;
     TWSR |= (1<<TWPS0);
 
@@ -111,41 +111,33 @@ int main(void) {
     // Wait for the start condition to be transmitted
     while (!(TWCR & (1<<TWINT)));
     // Check if start was sent successfully
-    if ((TWSR & 0xF8) != 0x08) {
-        write_serial("TWI: Failed to send START signal!\n\r", 0);
+    unsigned char status = (TWSR & 0xF8);
+    if (status == 0x08) {
+        write_serial("TWI: START signal has been transmitted successfully!\n\r", 0);
+
+    } else if (status == 0x10) {
+        write_serial("TWI: A REPEATED START signal has been transmitted successfully\n\r",0 );
+    }
+    else {
+        write_serial("TWI: Failed to send START/REPEATED START signal!\n\r", 0);
         goto eternal_suffering;
     }
-    write_serial("TWI: Start signal sent successfully!\n\r", 0);
-
-
-    unsigned char slave_addresss = 1;
-mewo:
-    slave_addresss++;
 
     // Prepare SLA+W (in the TWDR)
     TWDR = (slave_addresss<<1) | 0;
 
     // Address the slave
-    TWCR |= (1<<TWINT);
+    TWCR = (1<<TWINT) | (1<<TWEN);
     while (!(TWCR & (1<<TWINT)));
 
     // Check whether slave ACK-d addressing
     if ((TWSR & 0xF8) != 0x18) {
         write_serial("TWI: Slave didn't ACK (ACK-N) addressing!\n\r", 0);
 
-        if (slave_addresss >= 127) goto eternal_suffering;
-        else goto mewo;
-        // goto eternal_suffering;
+        goto eternal_suffering;
     }
 
     write_serial("TWI: Slave ACK-d addressing!\n\r", 0);
-    char mewo[100];
-    sprintf(mewo, "Address of slave is: %i", slave_addresss);
-    write_serial(mewo, 0);
-
-
-
-
 
     // Make sure we never return
 eternal_suffering:
