@@ -1,5 +1,4 @@
 #include "serial.h"
-#include "types.h"
 
 #include <avr/io.h>
 
@@ -7,7 +6,7 @@ int main(void) {
     // Turn off the onboard LED
     DDRB |= 0<<PB5;
 
-    serial_init();
+    serial_init(0);
     serial_write("Welcome to hell!\n\r", 0);
 
     // Synchronous TWI implementation (no interrupts)

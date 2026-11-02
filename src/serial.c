@@ -1,9 +1,11 @@
 #include "types.h"
+#include "serial.h"
 
 #include <avr/io.h>
+#include <stdbool.h>
 
 /// The passed in baud rate should greater than 0 and less than 2^12-1
-void UART_init(unsigned int UBRR, char should_use_double_speed) {
+void UART_init(unsigned int UBRR, bool should_use_double_speed) {
     // Disable interrupts while enabling USART
     SREG &= 0b01111111;
 
@@ -32,10 +34,10 @@ short UART_is_rx_enabled() {
 }
 
 /// Initialize the serial communication over USB.
-void serial_init() {
-    // 3 or 7 if u2xn is enabled which for 250k baudrate
-    // (with 0% rounding error for clock generation)
-    UART_init(7, 1);
+void serial_init(Baudrate baudrate) {
+    // U2X (double speed) is always enabled as it gives smaller
+    // rounding errors for 16mhz cpu speeds
+    UART_init(baudrate ? baudrate : BAUDRATE_DEFAULT, true);
 }
 
 // Writes size amount of bytes from data into the serial port. If

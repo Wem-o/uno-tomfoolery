@@ -3,9 +3,27 @@
 
 #include "types.h"
 
+typedef enum {
+    BAUDRATE_DEFAULT = 7, // Same as 250k
+    BAUDRATE_2400 = 832,
+    BAUDRATE_4800 = 416,
+    BAUDRATE_9600 = 207,
+    BAUDRATE_14_4K = 138,
+    BAUDRATE_19_2k = 103,
+    BAUDRATE_28_8K = 68,
+    BAUDRATE_38_4K = 51,
+    BAUDRATE_57_6K = 34,
+    BAUDRATE_76_8K = 25,
+    BAUDRATE_115_2K = 16,
+    BAUDRATE_230_4K = 8,
+    BAUDRATE_250K = 7,
+    BAUDRATE_500K = 3,
+    BAUDRATE_1M = 1
+} Baudrate;
+
 // Initialize the serial communication over USB. This must be called before
 // any other serial_ function is called.
-void serial_init();
+void serial_init(Baudrate baudrate);
 
 // Writes size amount of bytes from data into the serial port. If
 // (and only if) size is 0 data is writen until a nullterminator
