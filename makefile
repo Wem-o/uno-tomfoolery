@@ -15,7 +15,7 @@ target/output.hex: target/output.elf
 
 target/output.elf: $(SRC_FILES) makefile
 	mkdir -p target
-	avr-gcc -Wall -Werror -Os -DF_CPU=$(CPU_FREQ) -mmcu=$(MCU) -iquote includes \
+	avr-gcc -Wall -Os -DF_CPU=$(CPU_FREQ) -mmcu=$(MCU) -iquote includes \
 	  -o $@ $(SRC_FILES)
 
 

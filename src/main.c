@@ -50,6 +50,54 @@ int main(void) {
 
     serial_write("TWI: Slave ACK-d addressing!\n\r", 0);
 
+    // If RW is not set: if rs isn't set either data is intercepted as a
+    // general command (like clearscreen and such), if it's enabled it's
+    // writen into CGRAM or or DDRAM
+    const u8 HDRS = 0;
+    const u8 HDRW = 1;
+    const u8 HDEN = 2;
+    const u8 HDBLENA = (1<<3);
+    const u8 HDDATA_MASK = 0b11110000;
+
+    // == Blink cursor ==
+    u8 x = (1<<HDEN) | HDBLENA;
+
+    // Send enable + 0000 for data bit upper first
+    TWDR = x;
+    TWCR = (1<<TWINT) | (1<<TWEN);
+    while (!(TWCR & (1<<TWINT)));
+
+    // Send no enable
+    TWDR = 0 | HDBLENA;
+    TWCR = (1<<TWINT) | (1<<TWEN);
+    while (!(TWCR & (1<<TWINT)));
+
+    // Send enable + 1DCB
+    TWDR = x | 0b11110000;
+    TWCR = (1<<TWINT) | (1<<TWEN);
+    while (!(TWCR & (1<<TWINT)));
+
+    // Send no enable
+    TWDR = 0 | HDBLENA;
+    TWCR = (1<<TWINT) | (1<<TWEN);
+    while (!(TWCR & (1<<TWINT)));
+
+    serial_write("Demo sent", 0);
+
+    // The character code for 'A' is 0x41
+    // u8 codes [] = {0x41};
+
+    // for (u16 i = 0; i < sizeof(codes); ++i) {
+    //     // The upper and lower 4 bits of the code
+    //     u8 code[2] = {codes[i] & 0b11110000, codes[i] & 0b00001111};
+    //     u8 hd_opmode = (1<<HDRS) | (1<<HDEN)
+
+    //     TWDR = code;
+
+    //     TWCR = (1<<TWEN) | (1<<TWINT);
+    //     while (!(TWCR & (1<<TWINT)));
+    // }
+
     // Make sure we never return
 eternal_suffering:
     for (;;) {}
