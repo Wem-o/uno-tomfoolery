@@ -1,10 +1,11 @@
 #include "serial.h"
+#include "twi.h"
 
 #include <avr/io.h>
 
 int main(void) {
     // Turn off the onboard LED
-    DDRB |= 0<<PB5;
+    DDRB = 0<<PB5;
 
     serial_init(0);
     serial_write("Welcome to hell!\n\r", 0);
@@ -12,47 +13,30 @@ int main(void) {
     // Synchronous TWI implementation (no interrupts)
     unsigned char slave_addresss = 0x27;
 
-    // // Set up clock generator and prescaler
-    // // To get around 5k hertz 100 TWBR and 16 prescaling is used
-    TWBR = 100;
-    TWSR |= (1<<TWPS0);
-
-    // Enable TWI, queue up and send start condition (send is done by writing 1 to TWINT)
-    TWCR = (1<<TWEN) | (1<<TWSTA) | (1<<TWINT);
-    // Wait for the start condition to be transmitted
-    while (!(TWCR & (1<<TWINT)));
-    // Check if start was sent successfully
-    unsigned char status = (TWSR & 0xF8);
-    if (status == 0x08) {
-        serial_write("TWI: START signal has been transmitted successfully!\n\r", 0);
-
-    } else if (status == 0x10) {
-        serial_write("TWI: A REPEATED START signal has been transmitted successfully\n\r",0 );
+    // Set up clock generator and prescaler
+    // To get around 5k hertz 100 TWBR and 16 prescaling is used
+    twi_set_clock(100, 16);
+    switch (twi_send_start()) {
+        case TWI_RESULT_OK:
+            serial_write("TWI: START signal has been transmitted successfully!\n\r", 0);
+            break;
+        case TWI_RESULT_REPSTART:
+            serial_write("TWI: A REPEATED START signal has been transmitted successfully\n\r",0 );
+            break;
+        case TWI_RESULT_TRANS_ERROR:
+            serial_write("TWI: Failed to send START/REPEATED START signal!\n\r", 0);
+            goto eternal_suffering;
+        default:
+            goto eternal_suffering;
     }
-    else {
-        serial_write("TWI: Failed to send START/REPEATED START signal!\n\r", 0);
-        goto eternal_suffering;
-    }
-
-    // Prepare SLA+W (in the TWDR)
-    TWDR = (slave_addresss<<1) | 0;
-
-    // Address the slave
-    TWCR = (1<<TWINT) | (1<<TWEN);
-    while (!(TWCR & (1<<TWINT)));
-
     // Check whether slave ACK-d addressing
-    if ((TWSR & 0xF8) != 0x18) {
+    if (twi_address_slave(slave_addresss, true) != TWI_RESULT_OK) {
         serial_write("TWI: Slave didn't ACK (ACK-N) addressing!\n\r", 0);
-
         goto eternal_suffering;
     }
 
     serial_write("TWI: Slave ACK-d addressing!\n\r", 0);
 
-    // If RW is not set: if rs isn't set either data is intercepted as a
-    // general command (like clearscreen and such), if it's enabled it's
-    // writen into CGRAM or or DDRAM
     const u8 HDRS = 0;
     const u8 HDRW = 1;
     const u8 HDEN = 2;
@@ -60,46 +44,26 @@ int main(void) {
     const u8 HDDATA_MASK = 0b11110000;
 
     // == Blink cursor ==
-    u8 x = (1<<HDEN) | HDBLENA;
+    u8 x = (1<<HDEN);
+    u8 msg[] = {x, 0 | HDBLENA, x | 0b11110000, 0 | HDBLENA};
+    twi_send_bytes(msg, sizeof(msg), 0);
+    twi_send_stop();
+    serial_write("Blinky sent", 0);
 
-    // Send enable + 0000 for data bit upper first
-    TWDR = x;
-    TWCR = (1<<TWINT) | (1<<TWEN);
-    while (!(TWCR & (1<<TWINT)));
 
-    // Send no enable
-    TWDR = 0 | HDBLENA;
-    TWCR = (1<<TWINT) | (1<<TWEN);
-    while (!(TWCR & (1<<TWINT)));
+    // // Send enable + 0000 for data bit upper first
+    // twi_send_byte(x);
 
-    // Send enable + 1DCB
-    TWDR = x | 0b11110000;
-    TWCR = (1<<TWINT) | (1<<TWEN);
-    while (!(TWCR & (1<<TWINT)));
+    // // Send no enable
+    // twi_send_byte(0 | HDBLENA);
 
-    // Send no enable
-    TWDR = 0 | HDBLENA;
-    TWCR = (1<<TWINT) | (1<<TWEN);
-    while (!(TWCR & (1<<TWINT)));
+    // // Send enable + 1DCB
+    // twi_send_byte(x | 0b11110000);
 
-    serial_write("Demo sent", 0);
+    // // Send no enable
+    // twi_send_byte(0 | HDBLENA);
 
-    // The character code for 'A' is 0x41
-    // u8 codes [] = {0x41};
-
-    // for (u16 i = 0; i < sizeof(codes); ++i) {
-    //     // The upper and lower 4 bits of the code
-    //     u8 code[2] = {codes[i] & 0b11110000, codes[i] & 0b00001111};
-    //     u8 hd_opmode = (1<<HDRS) | (1<<HDEN)
-
-    //     TWDR = code;
-
-    //     TWCR = (1<<TWEN) | (1<<TWINT);
-    //     while (!(TWCR & (1<<TWINT)));
-    // }
-
-    // Make sure we never return
 eternal_suffering:
-    for (;;) {}
-    return 0;
+    // Make sure we never return
+    while (true);
 }
