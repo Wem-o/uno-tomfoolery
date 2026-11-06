@@ -56,6 +56,6 @@ TwiResult twi_send_byte(u8 byte);
 //
 // TWI_RESULT_CLOCK_NOT_SET is returned and no data is sent when the clockrate
 // wasn't set yet (see `twi_set_clock`).
-TwiResult twi_send_bytes(const void* data, u32 size, u32* bytes_transmitted);
+TwiResult twi_send_bytes(const void* data, u32 size);
 
 #endif // __COOL_TWI_HEADER_GUARD__
