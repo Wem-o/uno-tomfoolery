@@ -2,74 +2,85 @@
 #include "twi.h"
 
 #include <avr/io.h>
+#include <stdio.h>
+
+// Register selector
+const u8 HD_REGSEL = 0;
+// Enable writing
+const u8 HD_ENA = 1<<2;
+// Enable bakclight (in hardware)
+const u8 HD_BL_ENA = 1<<3;
+
+const u8 HD_DISPLAY_CONTROL_DISPLAY_ENABLE = 2;
+const u8 HD_DISPLAY_CONTROL_CURSOR = 1;
+const u8 HD_DISPLAY_CONTROL_BLINK = 0;
+
+const u8 HD_FUNCTION_SET_4BIT_MODE = 1<<4;
+const u8 HD_FUNCTION_SET_2LINE_MODE = 1<<3;
+const u8 HD_FUNCTION_SET_5x10_FONT = 1<<2;
+
+const u8 HD_SHIFT_DISPLAY = 1<<3;
+const u8 HD_SHIFT_CURSOR = 0;
+
+const u8 HD_SHIFT_RIGHT = 1<<2;
+const u8 HD_SHIFT_LEFT = 0;
+
+typedef enum {
+    HdCls = 1,
+    HdReturnHome = 2,
+    HdSetEntryMode = 4,
+    HdDisplayControl = 8,
+    HdShift = 16,
+    HdFunctionSet = 32,
+    HdSetCGRamAddress = 64,
+    HdSetDDRamAddress = 128
+} HdCommand;
+
+
+// Commands must be an array of u8's. Every even element (0, 2, 4...) should
+// contain true if the odd indexed element after it is an instruction
+// (like clearing the screen) or a data call (like writing into DD or CG ram).
+void lcd_send_commands(u8* commands, u16 sizeof_commands) {
+    for (u16 i = 1; i < sizeof_commands; i += 2) {
+        for (u8 count = 0; count < 2; count++) {
+            u8 data = (count == 1) ? commands[i] << 4 : commands[i] & 0b11110000;
+            data |= HD_ENA | HD_BL_ENA | (!commands[i - 1] ? 1 : 0);
+            twi_send_byte(data);
+
+            // Every data byte is terminated with a 0. HD_BL_ENA's pin isn't
+            // connected to the display manager, but to a seperate circuit that
+            // handles the backlight, so that should stay high.
+            twi_send_byte(0 | HD_BL_ENA);
+        }
+    }
+}
 
 void mewo() {
-    // Register selector
-    const u8 HD_REGSEL = 0;
-    // Enable writing
-    const u8 HD_ENA = 1<<2;
-    // Enable bakclight (in hardware)
-    const u8 HD_BL_ENA = 1<<3;
-
-    const u8 HD_DISPLAY_CONTROL_DISPLAY_ENABLE = 2;
-    const u8 HD_DISPLAY_CONTROL_CURSOR = 1;
-    const u8 HD_DISPLAY_CONTROL_BLINK = 0;
-
-    const u8 HD_FUNCTION_SET_4BIT_MODE = 1<<4;
-    const u8 HD_FUNCTION_SET_2LINE_MODE = 1<<3;
-    const u8 HD_FUNCTION_SET_5x10_FONT = 1<< 2;
-
-    typedef enum {
-        HdCls = 1,
-        HdReturnHome = 2,
-        HdSetEntryMode = 4,
-        HdDisplayControl = 8,
-        HdCursorShift = 16,
-        HdFunctionSet = 32,
-        HdSetCGRamAddress = 64,
-        HdSetDDRamAddress = 128
-    } HdCommand;
-
     // == Say hello wold ==
     u8 commands[] = {
     //  CMD?    Value
-        true,   HdFunctionSet | HD_FUNCTION_SET_4BIT_MODE | HD_FUNCTION_SET_2LINE_MODE,
+        true,   HdDisplayControl | (1<<HD_DISPLAY_CONTROL_CURSOR) | (1<<HD_DISPLAY_CONTROL_DISPLAY_ENABLE),
         true,   HdCls,
         true,   HdReturnHome,
-        true,   HdDisplayControl | (1<<HD_DISPLAY_CONTROL_CURSOR) | (1<<HD_DISPLAY_CONTROL_DISPLAY_ENABLE),
-        true,   HdSetDDRamAddress,
+
         false,  0b01001000, // H
         false,  0b01100101, // e
         false,  0b01101100, // l
         false,  0b01101100, // l
         false,  0b01101111, // o
+
+        // 2nd line
+        true, HdSetDDRamAddress | 0x40,
+        false,  0b01010111, // W
+        false,  0b01101111, // o
+        false,  0b01110010, // r
+        false,  0b01101100, // l
+        false,  0b01100100, // d
+        false,  0b00100001, // !
     };
-    usize cmd_size = sizeof(commands);
 
-    u8 msg[cmd_size * 2] = {};
-    u16 msg_index = 0;
+    lcd_send_commands(commands, sizeof(commands));
 
-    for (u16 i = 1; i < cmd_size; i += 2) {
-        // char thing[100];
-        // sprintf(thing, "%i. %x\n\r", i, commands[i]);
-        // serial_write(thing, 0);
-
-        for (u8 count = 0; count < 2; count++) {
-            u8 data = count == 1 ? commands[i] << 4 : commands[i] & 0b11110000;
-            msg[msg_index] = data | HD_ENA | HD_BL_ENA | (!commands[i - 1] ? 1 : 0);
-            msg_index++;
-
-            // thing[0] = 0;
-            // sprintf(thing, "\tI: %i - Count: %i. Data: %x  msg[msg_index]: %x\n\r", i, count, data, msg[msg_index]);
-            // serial_write(thing, 0);
-
-            msg[msg_index] = 0 | HD_BL_ENA;
-            msg_index++;
-        }
-    }
-
-    TwiResult res = twi_send_bytes(msg, sizeof(msg));
-    // twi_send_stop();
     serial_write("Demo sent", 0);
 }
 
@@ -80,7 +91,7 @@ int main(void) {
     serial_init(0);
     serial_write("Welcome to hell!\n\r", 0);
 
-    // Synchronous TWI implementation (no interrupts)
+
     unsigned char slave_addresss = 0x27;
 
     // Set up clock generator and prescaler
@@ -95,7 +106,6 @@ int main(void) {
             break;
         case TWI_RESULT_TRANS_ERROR:
             serial_write("TWI: Failed to send START/REPEATED START signal!\n\r", 0);
-            goto eternal_suffering;
         default:
             goto eternal_suffering;
     }
@@ -108,19 +118,7 @@ int main(void) {
 
     mewo();
 
-    // // Send enable + 0000 for data bit upper first
-    // twi_send_byte(x);
-
-    // // Send no enable
-    // twi_send_byte(0 | HDBLENA);
-
-    // // Send enable + 1DCB
-    // twi_send_byte(x | 0b11110000);
-
-    // // Send no enable
-    // twi_send_byte(0 | HDBLENA);
-
 eternal_suffering:
-    // Make sure we never return
+    // Make sure we never return (this is optimized out so that's a lie)
     while (true);
 }
