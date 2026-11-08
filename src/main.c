@@ -2,7 +2,6 @@
 #include "twi.h"
 
 #include <avr/io.h>
-#include <stdio.h>
 
 // Register selector
 const u8 HD_REGSEL = 0;
@@ -25,6 +24,15 @@ const u8 HD_SHIFT_CURSOR = 0;
 const u8 HD_SHIFT_RIGHT = 1<<2;
 const u8 HD_SHIFT_LEFT = 0;
 
+const u8 HD_FIRST_LINE = 0;
+const u8 HD_SECOND_LINE = 0x40; // 64
+const u8 HD_THIRD_LINE = 0x14; // 20
+const u8 HD_FOURTH_LINE = 0x54; // 84
+const u8 HD_LINE_ADDRESSED[4] = {
+    HD_FIRST_LINE, HD_SECOND_LINE,
+    HD_THIRD_LINE, HD_FOURTH_LINE
+};
+
 typedef enum {
     HdCls = 1,
     HdReturnHome = 2,
@@ -36,52 +44,64 @@ typedef enum {
     HdSetDDRamAddress = 128
 } HdCommand;
 
+// Send a command to the lcd thorugh TWI.
+void lcd_send_command(u8 command, bool is_instruction) {
+    for (u8 count = 0; count < 2; count++) {
+        u8 data = (count == 1) ? command << 4 : command & 0b11110000;
+        data |= HD_ENA | HD_BL_ENA | (is_instruction ? 0 : 1);
+        twi_send_byte(data);
 
+        // Every data byte is terminated with a 0. HD_BL_ENA's pin isn't
+        // connected to the display manager, but to a seperate circuit that
+        // handles the backlight, so that should stay high.
+        twi_send_byte(0 | HD_BL_ENA);
+    }
+}
+
+// Send a command buffer to the lcd thorugh TWI.
 // Commands must be an array of u8's. Every even element (0, 2, 4...) should
 // contain true if the odd indexed element after it is an instruction
 // (like clearing the screen) or a data call (like writing into DD or CG ram).
 void lcd_send_commands(u8* commands, u16 sizeof_commands) {
     for (u16 i = 1; i < sizeof_commands; i += 2) {
-        for (u8 count = 0; count < 2; count++) {
-            u8 data = (count == 1) ? commands[i] << 4 : commands[i] & 0b11110000;
-            data |= HD_ENA | HD_BL_ENA | (!commands[i - 1] ? 1 : 0);
-            twi_send_byte(data);
-
-            // Every data byte is terminated with a 0. HD_BL_ENA's pin isn't
-            // connected to the display manager, but to a seperate circuit that
-            // handles the backlight, so that should stay high.
-            twi_send_byte(0 | HD_BL_ENA);
-        }
+        lcd_send_command(commands[i], commands[i - 1]);
     }
 }
 
-void mewo() {
-    // == Say hello wold ==
-    u8 commands[] = {
-    //  CMD?    Value
-        true,   HdDisplayControl | (1<<HD_DISPLAY_CONTROL_CURSOR) | (1<<HD_DISPLAY_CONTROL_DISPLAY_ENABLE),
-        true,   HdCls,
-        true,   HdReturnHome,
+void lcd_display_control(bool enable_display, bool show_cursor, bool blink_cursor) {
+    u8 data = HdDisplayControl
+        | ((enable_display ? 1 : 0)<<HD_DISPLAY_CONTROL_DISPLAY_ENABLE)
+        | ((show_cursor ? 1 : 0)<<HD_DISPLAY_CONTROL_CURSOR)
+        | ((blink_cursor ? 1 : 0)<<HD_DISPLAY_CONTROL_BLINK);
+    lcd_send_command(data, true);
+}
 
-        false,  0b01001000, // H
-        false,  0b01100101, // e
-        false,  0b01101100, // l
-        false,  0b01101100, // l
-        false,  0b01101111, // o
+void lcd_clear_screen() {
+    lcd_send_command(HdCls, true);
+}
 
-        // 2nd line
-        true, HdSetDDRamAddress | 0x40,
-        false,  0b01010111, // W
-        false,  0b01101111, // o
-        false,  0b01110010, // r
-        false,  0b01101100, // l
-        false,  0b01100100, // d
-        false,  0b00100001, // !
-    };
+void lcd_return_home() {
+    lcd_send_command(HdReturnHome, true);
+}
 
-    lcd_send_commands(commands, sizeof(commands));
+// Jump to a position on the screen. Both line and col are 0 indexed.
+//
+// False is returned if invalid input is provided: if line is bigger than 3
+// or if col is bigger than 23.
+bool lcd_jump_to(u8 line, u8 col) {
+    if (line > 3 || col > 23) return false;
 
-    serial_write("Demo sent", 0);
+    lcd_send_command(HdSetDDRamAddress | (HD_LINE_ADDRESSED[line] + col), true);
+    return true;
+}
+
+// Writes the passed in string to the lcd and handles wrapping.
+void lcd_write_string(char* string) {
+    char* byte = string;
+    while (*byte != '\0') {
+        lcd_send_command(*byte, false);
+        byte++;
+    }
 }
 
 int main(void) {
@@ -116,7 +136,15 @@ int main(void) {
     }
     serial_write("TWI: Slave ACK-d addressing!\n\r", 0);
 
-    mewo();
+    // == Say hello world ==
+    lcd_clear_screen();
+    lcd_return_home();
+    lcd_jump_to(1, (20 / 2 - 2) - 1);
+    lcd_write_string("Hello");
+    lcd_jump_to(2, (20 / 2 - 2) - 1);
+    lcd_write_string("World!");
+
+    serial_write("Demo sent", 0);
 
 eternal_suffering:
     // Make sure we never return (this is optimized out so that's a lie)
