@@ -44,6 +44,9 @@ typedef enum {
     HdSetDDRamAddress = 128
 } HdCommand;
 
+static u8 SELECTED_LINE = 0;
+static u8 SELECTED_CHAR = 0;
+
 // Send a command to the lcd thorugh TWI.
 void lcd_send_command(u8 command, bool is_instruction) {
     for (u8 count = 0; count < 2; count++) {
@@ -78,10 +81,14 @@ void lcd_display_control(bool enable_display, bool show_cursor, bool blink_curso
 
 void lcd_clear_screen() {
     lcd_send_command(HdCls, true);
+    SELECTED_LINE = 0;
+    SELECTED_CHAR = 0;
 }
 
 void lcd_return_home() {
     lcd_send_command(HdReturnHome, true);
+    SELECTED_LINE = 0;
+    SELECTED_CHAR = 0;
 }
 
 // Jump to a position on the screen. Both line and col are 0 indexed.
@@ -89,19 +96,37 @@ void lcd_return_home() {
 // False is returned if invalid input is provided: if line is bigger than 3
 // or if col is bigger than 23.
 bool lcd_jump_to(u8 line, u8 col) {
-    if (line > 3 || col > 23) return false;
+    if (line > 3 || col >= 20) return false;
 
-    lcd_send_command(HdSetDDRamAddress | (HD_LINE_ADDRESSED[line] + col), true);
+    lcd_send_command(HdSetDDRamAddress | ((HD_LINE_ADDRESSED[line]) + col), true);
+    SELECTED_LINE = line;
+    SELECTED_CHAR = col;
     return true;
 }
 
 // Writes the passed in string to the lcd and handles wrapping.
-void lcd_write_string(char* string) {
-    char* byte = string;
-    while (*byte != '\0') {
+//
+// With overflow_to_origin being true, after the last line's last
+// character the cursor returns to 0, 0.
+//
+// Returns false if overflow_to_origin is false, and couldn't
+// fit the whole message on the screen, including if it's because a
+// \n character!
+bool lcd_write_string(char* string, bool overflow_to_home) {
+    for (char* byte = string; *byte != '\0'; byte++) {
+        if (SELECTED_LINE == 3 && SELECTED_CHAR == 19 && !overflow_to_home) return false;
+
+        if ((*byte == '\n' || SELECTED_CHAR >= 20) && !lcd_jump_to(++SELECTED_LINE, 0)) {
+            if (overflow_to_home) lcd_jump_to(HD_FIRST_LINE, 0);
+            else return false;
+        }
+        if (*byte == '\n') continue;
+        if (*byte == ' ' && SELECTED_CHAR == 0) continue;
         lcd_send_command(*byte, false);
-        byte++;
+        SELECTED_CHAR++;
     }
+
+    return true;
 }
 
 int main(void) {
@@ -139,10 +164,7 @@ int main(void) {
     // == Say hello world ==
     lcd_clear_screen();
     lcd_return_home();
-    lcd_jump_to(1, (20 / 2 - 2) - 1);
-    lcd_write_string("Hello");
-    lcd_jump_to(2, (20 / 2 - 2) - 1);
-    lcd_write_string("World!");
+    lcd_write_string("The missile knows where it is, by knowing where it isn't...\nI mean hello world!", false);
 
     serial_write("Demo sent", 0);
 
